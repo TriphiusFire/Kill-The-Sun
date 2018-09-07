@@ -1,5 +1,7 @@
 # Kill-The-Sun
-A simple WebGL FPS I made from scratch with Three.js
+A simple WebGL FPS
+
+I took a beginner three.js course on Udemy, 5.5 hours of lectures, over 2 days, and then made this game on my own from scratch with the learned skill.
 
 you'll need the minified three.js script in the /js folder for this game to work
 
