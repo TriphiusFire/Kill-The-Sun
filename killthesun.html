@@ -1,0 +1,621 @@
+
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title></title>
+    <link rel="stylesheet" href="css/style.css">
+
+    <script type="text/javascript" src="js/three.min.js"></script>
+  </head>
+
+  <body id="body">
+
+
+    <script type="text/javascript">
+
+      let scene,camera,renderer;                            // what to see
+      let cannonListener, cannonSound, cannonAudioListener  // what to hear
+      let boxes = [];                                       // stuff to jump on
+      let balls = [];                                       // stuff to shoot
+      let deadBoxes = [];
+      let sunKills = 0;
+
+      let jumpVelocity = 40;  //how fast to jum
+      let theta = 0;          //"time", increases every frame
+
+      //key and mouse toggles
+      let toggleForward = false;      //walk forward when true
+      let toggleBackward = false;     //walk backward when true
+      let toggleLeft = false;         //strafe left when true
+      let toggleRight = false;        //strafe right when true
+      let toggleSpeed = false;        //doubles speed when true
+      let toggleRightClick = false;   //allows camera rotation on drag when true
+      let toggleLeftClick = false;    //shoot a cannon ball
+      let toggleJump = false;         //jump
+
+      //change key toggles
+      let onKeyDownW = function(e){
+        if (e.keyCode == W){
+          toggleForward = true;
+        }
+        else return;
+      }
+      let onKeyUpW = function(e){
+        if (e.keyCode == W){
+          toggleForward = false;
+        }
+        else return;
+      }
+      let onKeyDownS = function(e){
+        if (e.keyCode == S){
+          toggleBackward = true;
+        }
+        else return;
+      }
+      let onKeyUpS = function(e){
+        if (e.keyCode == S){
+          toggleBackward = false;
+        }
+        else return;
+      }
+      let onKeyDownA = function(e){
+        if (e.keyCode == A){
+          toggleLeft = true;
+        }
+        else return;
+      }
+      let onKeyUpA = function(e){
+        if (e.keyCode == A){
+          toggleLeft = false;
+        }
+        else return;
+      }
+      let onKeyDownD = function(e){
+        if (e.keyCode == D){
+          toggleRight = true;
+        }
+        else return;
+      }
+      let onKeyUpD = function(e){
+        if (e.keyCode == D){
+          toggleRight = false;
+        }
+        else return;
+      }
+      let onKeyDownM = function(e){
+        if(e.keyCode == M){
+          //toggle music
+          if(musicSound.isPlaying)musicSound.stop();
+          else musicSound.play();
+        }
+      }
+      let onKeyDownShift = function(e){
+        if (e.keyCode == SHIFT){
+          toggleSpeed = true;
+        }
+        else return;
+      }
+      let onKeyUpShift = function(e){
+        if (e.keyCode == SHIFT){
+          toggleSpeed = false;
+        }
+        else return;
+      }
+      // let onKeyDownSpace = function(e){
+      //   if (e.keyCode == SPACE){
+      //   }
+      // };
+      let onKeyUpSpace = function(e){
+        if (e.keyCode == SPACE){
+          toggleJump = true;
+          // toggleJumpPrep = false;
+        }
+      };
+
+      let lastX,lastY;
+
+      let mx,my; //mouse x and y for pointerlock control
+      var body = document.querySelector('body');
+      body.requestPointerLock = body.requestPointerLock || body.mozRequestPointerLock;
+      document.exitPointerLock = document.exitPointerLock || document.mozExitPointerLock;
+
+      //camera rotation logic
+      let onMouseMove = function(e){
+        if(document.pointerLockElement === body){
+          let amtX = e.movementX;
+          let amtY = e.movementY;
+          camera.rotation.y -= 0.005*amtX;
+          //control up and down rotation
+          if(camera.rotation.x - 0.005*amtY < Math.PI/2 && camera.rotation.x - 0.005*amtY > -Math.PI/2)
+          camera.rotation.x -= 0.005*amtY;
+        }
+        else document.getElementById("body").style.cursor = "crosshair";
+
+      }
+      //mouse toggles and left click shooting
+      let onMouseDown = function(e){
+        if(e.button === 2){
+          document.getElementById("body").style.cursor = "none";
+
+          mx = window.innerWidth/2;
+          my = window.innerHeight/2;
+        }
+        //shoot an object with left mouse button
+        if(e.button === 0){
+          body.requestPointerLock();
+          toggleLeftClick = true;
+          if(balls.length<6){
+
+            if(cannonSound.isPlaying)cannonSound.stop();
+            //cannonSound.startTime = 0;
+            cannonSound.playbackRate=3+2*Math.random();
+
+            balls.push(new Ball());
+            cannonSound.play();
+          }
+        };
+      }
+      let onMouseUp = function(e){
+          //released "shoot" button
+          if(e.button === 0){
+            toggleLeftClick = false;
+          }
+      }
+
+      //return a random number within some range.
+      let randomInRange = function(from, to){
+        let x = Math.random() * (to - from);
+        return x + from;
+      };
+
+
+
+      //generate a "city" of random boxes (buildings) with scene origin at center
+      let randomBoxes = function(rows,columns,minW,maxW,minH,maxH,density){
+        let x,z;
+        for(let i = -rows/2; i < rows/2; i++){
+          for(let j = -columns/2; j < columns/2; j++){
+            x = i*maxW*1.5;
+            z = j*maxW*1.5;
+            if(Math.random()<density){
+              for(let k = 0; k < maxH; k++){
+                if(Math.random()<0.85)
+                {
+                  let b = new Box(randomInRange(minW,maxW),
+                          randomInRange(minW,maxW),
+                          x,k,z,Math.random()*0xffffff);
+                  boxes.push(b);
+                }
+                else break;
+              }
+            }
+          }
+        }
+      };
+
+      let createEnvironment = function(){
+        let geometryGround = new THREE.BoxGeometry(400,0.1,400);
+        let materialGround = new THREE.MeshPhongMaterial({
+          color: 0xffffff,
+          side: THREE.DoubleSide
+        });
+        let ground = new THREE.Mesh(geometryGround,materialGround);
+        scene.add(ground);
+        ground.receiveShadow = true;
+        randomBoxes(25,25,5,13,3,40,0.33);
+      };
+
+      let sun,sunlight;
+      let createSun = function(){
+
+        sunlight = new THREE.PointLight({
+          color: randomInRange(0x880000,0xffffff),
+          intensity: Math.random()+1,
+          distance: 500,
+          decay: 1
+        });
+        sunlight.position.set(0,150,0);
+        sunlight.castShadow=true;
+        scene.add(sunlight);
+        sunlight.shadow.mapSize.width = 1000;  // default
+        sunlight.shadow.mapSize.height = 1000; // default
+        sunlight.shadow.camera.near = 1;       // default
+        sunlight.shadow.camera.far = 2000;      // default
+        sunlight.shadow.bias = 0.01;
+
+        let material = new THREE.MeshPhongMaterial({
+          color: randomInRange(0x888800,0xffffff),
+          emissive: randomInRange(0x880000,0xffffff),
+          emissiveIntensity:.75
+        });
+        let geometry = new THREE.SphereGeometry(25,12,12);
+        sun = new THREE.Mesh(geometry,material);
+        sun.position.set(0,150+sunKills*8,0)
+        scene.add(sun);
+      }
+
+      //Cannons
+      class Ball{
+        constructor(){
+          let material = new THREE.MeshPhongMaterial({
+            color: Math.random*0xffffff,
+            side: THREE.DoubleSide,
+            shininess:100
+
+          });
+          let geometry = new THREE.SphereGeometry(1,12,12);
+          let ball = new THREE.Mesh(geometry,material);
+          ball.position.x = camera.position.x;
+          ball.position.y = camera.position.y;
+          ball.position.z = camera.position.z;
+          this.object = ball;
+          this.direction = new THREE.Vector3(0,0,0);
+          camera.getWorldDirection(this.direction );
+          scene.add(ball);
+          this.t = 100;
+          this.isAlive = true;
+        }
+        //behavior
+        move(){
+          this.object.position.x += this.direction.x*2;
+          this.object.position.y += this.direction.y+0.25;
+          this.direction.y-=.01;
+          this.object.position.z += this.direction.z*2;
+          if(this.object.position.y<.5)this.object.position.y=.5;
+          if((this.object.position).distanceTo(sun.position)<20){
+            sunlight.intensity=0;
+            scene.remove(sun,sunlight);
+            theta+=randomInRange(3*Math.PI/4,3*Math.PI/2);
+            // delete sunlight;
+            sunKills++;
+            createSun();
+
+          }
+          // boxes.forEach(box=>{
+          //   if((this.object.position).distanceTo(box.object.position)<3){
+          //     scene.remove(this.object);
+          //     box.remove();
+          //   }
+          // });
+          this.t-=1;
+          //removal after 200 animation frames
+          if(this.t<0){
+            scene.remove(this.object);
+            balls = balls.slice(1,balls.length);
+          }
+        }
+      }
+
+      //floating boxes
+      class Box{
+        constructor(w,d,x,y,z,c){
+          let geometryBox = new THREE.BoxGeometry(w,2.5,d);
+          geometryBox.mergeVertices();
+          // let modifier = new THREE.SubdivisionModifer(1);
+          let materialBox = new THREE.MeshPhongMaterial({
+            color: c,
+            side: THREE.DoubleSide,
+            shininess : randomInRange(0,100),
+            emissive: 0xaaaaaa,
+            emissiveIntensity: .2
+          });
+          let box = new THREE.Mesh(geometryBox,materialBox);
+          box.position.x = x+(Math.random()<5?1:-1)*Math.random()*(3*w);
+          box.position.z = z+(Math.random()<5?1:-1)*Math.random()*(3*w);
+          box.position.y+=y+Math.random()*0.1;
+          this.over = false;
+          this.object = box;
+          box.castShadow = true;
+          // box.receiveShadow = true;
+          scene.add(box);
+        }
+        //behavior
+        change(){
+          if(Math.random()<0.01)this.object.material.color.setHex(Math.random()*0xffffff)
+          if(Math.random()<0.1){
+            this.object.position.x+=Math.random()*0.5*(Math.random()<0.5?1:-1);
+            this.object.position.y+=Math.random()*0.5;
+            this.object.position.z+=Math.random()*0.5*(Math.random()<0.5?1:-1);
+            if(this.object.position.y > 90+sunKills*5){
+              this.object.position.y = -1;
+            }
+            if(this.object.position.y > 25){
+              if(Math.random()<0.002)this.object.position.y = -1;
+            }
+            if(this.object.position.z > 199){
+              this.object.position.z = 0 + Math.random()*25*(Math.random()<0.5?1:-1);
+            }
+            if(this.object.position.z < -199){
+              this.object.position.z = 0 + Math.random()*25*(Math.random()<0.5?1:-1);
+            }
+            if(this.object.position.x < -199){
+              this.object.position.x = 0 + Math.random()*25*(Math.random()<0.5?1:-1);
+            }
+            if(this.object.position.x > 199){
+              this.object.position.x = 0 + Math.random()*25*(Math.random()<0.5?1:-1);
+            }
+          }
+        }
+
+
+        //removal
+        remove(){
+          scene.remove(this.object);
+          boxes.splice(boxes.indexOf(this),1);
+        }
+      };
+
+      let init = function(){
+        /** CAMERA CREATION **/
+        camera = new THREE.PerspectiveCamera(80,window.innerWidth/window.innerHeight,.1,10000);
+        camera.position.set(0,3,0);
+        camera.rotation.order = "YXZ";
+        camera.rotation.y = -Math.PI/2;
+
+        /** SCENE CREATION **/
+        scene = new THREE.Scene();
+        //"Sky-Box" background
+        scene.background = new THREE.CubeTextureLoader().setPath('img/').load([
+          'spaceboxXpos.png',
+          'spaceboxXneg.png',
+          'spaceboxYpos.png',
+          'spaceboxYneg.png',
+          'spaceboxZpos.png',
+          'spaceboxZneg.png'
+        ]);
+        //Scene Object Creation
+        createEnvironment();
+        createSun();
+
+        let ambient = new THREE.AmbientLight(0x777777);
+
+        /** RENDERER CREATION **/
+        renderer = new THREE.WebGLRenderer();
+        //renderer sizing / resizing
+        renderer.setSize(window.innerWidth,window.innerHeight);
+        window.addEventListener('resize',function(){
+           camera.aspect = window.innerWidth / window.innerHeight;
+           camera.updateProjectionMatrix();
+           renderer.setSize( window.innerWidth, window.innerHeight );
+        });
+        //Shadows
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFShadowMap;
+        //add renderer to webpage
+        document.body.appendChild(renderer.domElement);
+
+        /** SOUNDS **/
+        // create an AudioListener and add it to the camera
+        cannonListener = new THREE.AudioListener();
+        let musicListener = new THREE.AudioListener();
+        camera.add(cannonListener, musicListener);
+
+        // create a global audio source
+        cannonSound = new THREE.Audio(cannonListener);
+        musicSound = new THREE.Audio(musicListener);
+
+        // load a sound and set it as the Audio object's buffer
+        cannonAudioLoader = new THREE.AudioLoader();
+        cannonAudioLoader.load( 'music/cannon.wav', function( buffer ) {
+          cannonSound.setBuffer( buffer );
+          cannonSound.setLoop( false );
+          cannonSound.setVolume( 0.1 );
+          cannonSound.playbackRate = 5;
+          cannonSound.hasPlaybackControl = true;
+        });
+
+        musicAudioLoader = new THREE.AudioLoader();
+        musicAudioLoader.load( 'music/antimatter.wav', function( buffer ) {
+          musicSound.setBuffer( buffer );
+          musicSound.setLoop( true );
+          musicSound.setVolume( 0.25 );
+          musicSound.playbackRate = 0.666666;
+          musicSound.hasPlaybackControl = true;
+          musicSound.play();
+        });
+      };
+
+      let cameraInBounds = function(){
+        if(camera.position.x > 200 || camera.position.x < -200
+          || camera.position.z > 200 || camera.position.z < -200){
+            return false;
+          }
+          else return true;
+
+
+      }
+
+      // main animation loop - call every 50 - 60 ms
+      let mainLoop = function(){
+        /** CAMERA CONTROL **/
+        //walking:
+        if(toggleForward){
+          camera.position.z -= (toggleSpeed?2:1) * Math.cos(camera.rotation.y) * .33;
+          camera.position.x -= (toggleSpeed?2:1) * Math.sin(camera.rotation.y) * .33;
+          if(!toggleJump)camera.position.y = 3 - (toggleSpeed?2:1) * Math.sin(theta*300)/2;
+        }
+        if(toggleBackward){
+          camera.position.z += (toggleSpeed?2:1) * Math.cos(camera.rotation.y) * .33;
+          camera.position.x += (toggleSpeed?2:1) * Math.sin(camera.rotation.y) * .33;
+          if(!toggleJump)camera.position.y = 3 - (toggleSpeed?2:1) * Math.sin(theta*300)/2;
+        }
+        //strafing:
+        if(toggleLeft){
+          camera.position.z += (toggleSpeed?2:1) * Math.sin(camera.rotation.y) * .33;
+          camera.position.x -= (toggleSpeed?2:1) * Math.cos(camera.rotation.y) * .33;
+          if(!toggleJump)camera.position.y = 3 - (toggleSpeed?2:1) * Math.sin(theta*300)/2;
+        }
+        if(toggleRight){
+          camera.position.z -= (toggleSpeed?2:1) * Math.sin(camera.rotation.y) * .33;
+          camera.position.x += (toggleSpeed?2:1) * Math.cos(camera.rotation.y) * .33;
+          if(!toggleJump)camera.position.y = 3 - (toggleSpeed?2:1) * Math.sin(theta*300)/2;
+        }
+
+
+
+        if(toggleJump){
+          camera.position.y += jumpVelocity/20;
+          if(camera.position.y<3){
+            if(cameraInBounds())camera.position.y = 3;
+            toggleJump = false;
+            jumpVelocity = 40+sunKills*2;
+          }
+          jumpVelocity -=1;
+        }
+
+        /** OBJECT ACTIONS **/
+        balls.forEach(ball=>ball.move());
+        boxes.forEach(box=>{
+          box.change();
+          if((camera.position).distanceTo(box.object.position)<6){
+            jumpVelocity = 40+sunKills;
+            toggleJump = true;
+          }
+        });
+        //Sun Orbiting Above Scene:
+        sun.position.x = 175*Math.sin(theta*3);
+        sun.position.z = 175*Math.cos(theta*3);
+        sunlight.position.x = 175*Math.sin(theta*3);
+        sunlight.position.z = 175*Math.cos(theta*3);
+        theta+=0.001;
+
+        //Render Scene
+        renderer.render(scene,camera);
+
+        //Call this function again for the next frame
+        requestAnimationFrame(mainLoop);
+      };
+
+      /** SET THE STAGE **/
+      init();
+
+      /** KEYBOARD EVENT LISTENERS **/
+      document.addEventListener("keydown",onKeyDownW,false);
+      document.addEventListener("keyup",onKeyUpW,false);
+      document.addEventListener("keydown",onKeyDownS,false);
+      document.addEventListener("keyup",onKeyUpS,false);
+      document.addEventListener("keydown",onKeyDownA,false);
+      document.addEventListener("keyup",onKeyUpA,false);
+      document.addEventListener("keydown",onKeyDownD,false);
+      document.addEventListener("keyup",onKeyUpD,false);
+      document.addEventListener("keydown",onKeyDownShift,false);
+      document.addEventListener("keyup",onKeyUpShift,false);
+      // document.addEventListener("keydown",onKeyDownSpace,false);
+      document.addEventListener("keyup",onKeyUpSpace,false);
+
+      document.addEventListener("keydown",onKeyDownM,false);
+
+      /** MOUSE EVENT LISTENERS **/
+      document.addEventListener("mousemove",onMouseMove,false);
+      document.addEventListener("mousedown",onMouseDown,false);
+      document.addEventListener("mouseup",onMouseUp,false);
+      document.addEventListener("contextmenu", function (e) {e.preventDefault(); });
+
+      /** JAVASCRIPT KEYCODES **/
+      //all that might ever be used
+      let ESCAPE = 27;
+      let F1 = 112;
+      let F2 = 113;
+      let F3 = 114;
+      let F4 = 115;
+      let F5 = 116;
+      let F6 = 117;
+      let F7 = 118;
+      let F8 = 119;
+      let F9 = 120;
+      let F10 = 121;
+      let F11 = 122;
+      let F12 = 123;
+      let SCROLLLOCK = 145;
+      let BACKQUOTE = 192; //  `
+      let NUMONE = 49;
+      let NUMTWO = 50;
+      let NUMTHREE = 51;
+      let NUMFOUR = 52;
+      let NUMFIVE = 53;
+      let NUMSIX = 54;
+      let NUMSEVEN = 55;
+      let NUMEIGHT = 56;
+      let NUMNINE = 57;
+      let NUMZERO = 48;
+      let MINUS = 189;
+      let PLUS = 187;
+      let BACKSPACE = 8;
+      let INSERT = 45;
+      let HOME = 36;
+      let PAGEUP = 33;
+      let NUMLOCK = 144;
+      let NUMPADDIVIDE = 111;
+      let NUMPADMULTIPY = 106;
+      let NUMPADSUBTRACT = 109;
+      let TAB = 9;
+      let Q = 81;
+      let W = 87;
+      let E = 69;
+      let R = 82;
+      let T = 84;
+      let Y = 89;
+      let U = 85;
+      let I = 73;
+      let O = 79;
+      let P = 80;
+      let BRACKETLEFT = 219;
+      let BRACKETRIGHT = 221;
+      let BACKSLASH = 220;
+      let DELETE = 46;
+      let END = 35;
+      let PAGEDOWN = 34;
+      let NUMPADSEVEN = 103;
+      let NUMPADEIGHT = 104;
+      let NUMPADNINE = 105;
+      let NUMPADADD = 107;
+      let CAPSLOCK = 20;
+      let A = 65;
+      let S = 83;
+      let D = 68;
+      let F = 70;
+      let G = 71;
+      let H = 72;
+      let J = 74;
+      let K = 75;
+      let L = 76;
+      let SEMICOLON = 186;
+      let QUOTE = 222;
+      let ENTER = 13;
+      let NUMPADFOUR = 100;
+      let NUMPADFIVE = 101;
+      let NUMPADSIX = 102;
+      let SHIFT = 16;
+      let Z = 90;
+      let X = 88;
+      let C = 67;
+      let V = 86;
+      let B = 66;
+      let N = 78;
+      let M = 77;
+      let COMMA = 188;
+      let PERIOD = 190;
+      let SLASH = 191;
+      let ARROWUP = 38;
+      let NUMPADONE = 97;
+      let NUMPADTWO = 98;
+      let NUMPADTHREE = 99;
+      let CONTROL = 17;
+      let METALEFT = 91; //WINDOWS KEY LEFT SIDE
+      let ALT = 18;
+      let SPACE = 32;
+      let METARIGHT = 92;
+      let CONTEXTMENU = 93;
+      let ARROWLEFT = 37;
+      let ARROWDOWN = 40;
+      let ARROWRIGHT = 39;
+      let NUMPADZERO = 96;
+      let NUMPADDECIMAL = 110;
+
+      /** START ANIMATION & CONTROL LOOPS **/
+      mainLoop();
+    </script>
+  </body>
+</html>
