@@ -11,3 +11,5 @@ Shift - move faster while held
 left mouse - shoot
 
 After each Sun Kill the floating blocks are allowed to go higher, you jump higher, and the sun goes higher.  The longer you play the crazier the experience.
+
+![alt text](https://github.com/TriphiusFire/Kill-The-Sun-WebGL-Browser-FPS/blob/master/killthesun.png?raw=true)
